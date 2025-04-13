@@ -12,46 +12,33 @@ from aioquic.tls import SessionTicket
 from dnslib.dns import DNSRecord
 
 
-class DnsServerProtocol(QuicConnectionProtocol):
+class ServerProtocol(QuicConnectionProtocol):
     def quic_event_received(self, event: QuicEvent):
         if isinstance(event, StreamDataReceived):
             # parse query
             print(event.data.decode())
 
+            # serialize query
+            query5 = "Received: "
+            response = bytes(query5 + event.data.decode(), "utf-8")
 
             # send answer
-            self._quic.send_stream_data(event.stream_id, event.data, end_stream=True)
+            self._quic.send_stream_data(event.stream_id, response, end_stream=True)
 
 
-class SessionTicketStore:
-    """
-    Simple in-memory store for session tickets.
-    """
-
-    def __init__(self) -> None:
-        self.tickets: Dict[bytes, SessionTicket] = {}
-
-    def add(self, ticket: SessionTicket) -> None:
-        self.tickets[ticket.ticket] = ticket
-
-    def pop(self, label: bytes) -> Optional[SessionTicket]:
-        return self.tickets.pop(label, None)
 
 
 async def main(
     host: str,
     port: int,
     configuration: QuicConfiguration,
-    session_ticket_store: SessionTicketStore,
     retry: bool,
 ) -> None:
     await serve(
         host,
         port,
         configuration=configuration,
-        create_protocol=DnsServerProtocol,
-        session_ticket_fetcher=session_ticket_store.pop,
-        session_ticket_handler=session_ticket_store.add,
+        create_protocol=ServerProtocol,
         retry=retry,
     )
     await asyncio.Future()
@@ -83,12 +70,6 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="load the TLS certificate from the specified file",
-    )
-    parser.add_argument(
-        "--resolver",
-        type=str,
-        default="8.8.8.8",
-        help="Upstream Classic DNS resolver to use",
     )
     parser.add_argument(
         "--retry",
@@ -132,7 +113,6 @@ if __name__ == "__main__":
                 host=args.host,
                 port=args.port,
                 configuration=configuration,
-                session_ticket_store=SessionTicketStore(),
                 retry=args.retry,
             )
         )

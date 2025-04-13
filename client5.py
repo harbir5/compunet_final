@@ -16,12 +16,12 @@ from dnslib.dns import QTYPE, DNSHeader, DNSQuestion, DNSRecord
 logger = logging.getLogger("client")
 
 
-class DnsClientProtocol(QuicConnectionProtocol):
+class ClientProtocol(QuicConnectionProtocol):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._ack_waiter: Optional[asyncio.Future[DNSRecord]] = None
+        self._ack_waiter: Optional[asyncio.Future[str]] = None
 
-    async def query(self):
+    async def query(self) -> None:
         # serialize query
         query5 = "Hello server"
         data = bytes(query5, "utf-8")
@@ -32,49 +32,36 @@ class DnsClientProtocol(QuicConnectionProtocol):
         waiter = self._loop.create_future()
         self._ack_waiter = waiter
         self.transmit()
+        return await asyncio.shield(waiter)
 
 
     def quic_event_received(self, event: QuicEvent) -> None:
         if self._ack_waiter is not None:
             if isinstance(event, StreamDataReceived):
                 # parse answer
-                print("Thank you")
-                length = struct.unpack("!H", bytes(event.data[:2]))[0]
-                answer = DNSRecord.parse(event.data[2 : 2 + length])
-                print(event)
+                print(event.data.decode())
                 # return answer
                 waiter = self._ack_waiter
                 self._ack_waiter = None
-                waiter.set_result(answer)
+                QuicConnectionProtocol.close(self)
+                waiter.set_result("Done")
+                return None
 
-
-def save_session_ticket(ticket):
-    """
-    Callback which is invoked by the TLS engine when a new session ticket
-    is received.
-    """
-    logger.info("New session ticket received")
-    if args.session_ticket:
-        with open(args.session_ticket, "wb") as fp:
-            pickle.dump(ticket, fp)
 
 
 async def main(
     configuration: QuicConfiguration,
     host: str,
     port: int,
-    query_name: str,
-    query_type: str,
 ) -> None:
     logger.debug(f"Connecting to {host}:{port}")
     async with connect(
         host,
         port,
         configuration=configuration,
-        session_ticket_handler=save_session_ticket,
-        create_protocol=DnsClientProtocol,
+        create_protocol=ClientProtocol,
     ) as client:
-        client = cast(DnsClientProtocol, client)
+        client = cast(ClientProtocol, client)
         logger.debug("Sending query")
         answer = await client.query()
         logger.info("Received answer\n%s" % answer)
@@ -100,8 +87,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ca-certs", type=str, help="load CA certificates from the specified file"
     )
-    parser.add_argument("--query-name", required=True, help="Domain to query")
-    parser.add_argument("--query-type", default="A", help="The DNS query type to send")
     parser.add_argument(
         "-q",
         "--quic-log",
@@ -113,12 +98,6 @@ if __name__ == "__main__":
         "--secrets-log",
         type=str,
         help="log secrets to a file, for use with Wireshark",
-    )
-    parser.add_argument(
-        "-s",
-        "--session-ticket",
-        type=str,
-        help="read and write session ticket from the specified file",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="increase logging verbosity"
@@ -140,22 +119,12 @@ if __name__ == "__main__":
         configuration.quic_logger = QuicFileLogger(args.quic_log)
     if args.secrets_log:
         configuration.secrets_log_file = open(args.secrets_log, "a")
-    if args.session_ticket:
-        try:
-            with open(args.session_ticket, "rb") as fp:
-                configuration.session_ticket = pickle.load(fp)
-        except FileNotFoundError:
-            logger.debug(f"Unable to read {args.session_ticket}")
-            pass
-    else:
-        logger.debug("No session ticket defined...")
+
 
     asyncio.run(
         main(
             configuration=configuration,
             host=args.host,
             port=args.port,
-            query_name=args.query_name,
-            query_type=args.query_type,
         )
     )

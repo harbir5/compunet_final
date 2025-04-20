@@ -1,3 +1,5 @@
+# This is the server file.
+
 import argparse
 import asyncio
 import logging
@@ -15,17 +17,15 @@ from dnslib.dns import DNSRecord
 class ServerProtocol(QuicConnectionProtocol):
     def quic_event_received(self, event: QuicEvent):
         if isinstance(event, StreamDataReceived):
-            # parse query
+            # print received data
             print(event.data.decode())
 
-            # serialize query
-            query5 = "Received: "
-            response = bytes(query5 + event.data.decode(), "utf-8")
+            # serialize response
+            query5 = "Here is the data you requested"
+            response = bytes(query5, "utf-8")
 
-            # send answer
+            # send response
             self._quic.send_stream_data(event.stream_id, response, end_stream=True)
-
-
 
 
 async def main(

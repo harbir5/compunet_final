@@ -1,3 +1,5 @@
+# This is the client file.
+
 import argparse
 import asyncio
 import logging
@@ -38,7 +40,7 @@ class ClientProtocol(QuicConnectionProtocol):
     def quic_event_received(self, event: QuicEvent) -> None:
         if self._ack_waiter is not None:
             if isinstance(event, StreamDataReceived):
-                # parse answer
+                # print answer
                 print(event.data.decode())
                 # return answer
                 waiter = self._ack_waiter
@@ -109,7 +111,7 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         level=logging.DEBUG if args.verbose else logging.INFO,
     )
-
+    # Set configurations based on arguments provided
     configuration = QuicConfiguration(alpn_protocols=["doq"], is_client=True)
     if args.ca_certs:
         configuration.load_verify_locations(args.ca_certs)
